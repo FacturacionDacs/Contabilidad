@@ -617,10 +617,11 @@
   }
   .rb-row > * { min-width: 0; }
   .rb-cell.rb-rc { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .rb-rc .rb-rubro {
+  .rb-rc .rb-rubro-display {
     width: 100%; box-sizing: border-box; min-width: 0;
     font-family: var(--font-mono); font-size: 11px; color: var(--text-soft);
-    padding: 5px 7px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface);
+    padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; user-select: none;
   }
   .rb-recurso-sub { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--text); padding-left: 2px; }
   .rb-saldo { font-family: var(--font-mono); font-weight: 700; font-size: 13px; color: var(--ok); text-align: right; overflow: hidden; text-overflow: ellipsis; }
@@ -2479,7 +2480,7 @@ button { font-weight:600; }
 
   var opForm = {
     rubros: [{ rubro: "", recurso: "", valor: "" }],
-    descuentos: [],
+    descuentos: [{ concepto: "", cuenta: "", tercero: "", valor: "" }],
     nomina: []
   };
   state.op = { entries: [] };
@@ -2596,6 +2597,9 @@ button { font-weight:600; }
     var saldo = currentSaldoRp();
     var saldoTxt = saldo === null ? "—" : moneyFmt(saldo);
     var saldoCls = saldo !== null && saldo < 0 ? "bad" : "";
+    var rp = findRpRow(document.getElementById("op-crp").value.trim());
+    var rubroTxt = rp ? rp.RUBRO : "—";
+    opForm.rubros.forEach(function (row) { row.rubro = rubroTxt; }); // se extrae del CRP, no se edita
 
     var thead =
       '<div class="rb-table-head">' +
@@ -2605,12 +2609,12 @@ button { font-weight:600; }
     var rows = opForm.rubros.map(function (row, i) {
       return '<div class="rb-row" data-i="' + i + '">' +
         '<div class="rb-cell rb-rc">' +
-          '<input type="text" class="rb-rubro" placeholder="Rubro (ej. 2.1.2.02.02.009.001)" value="' + escapeHtml(row.rubro) + '">' +
+          '<div class="rb-rubro-display" title="Se extrae automáticamente del CRP enlazado">' + escapeHtml(rubroTxt) + '</div>' +
           '<div class="rb-recurso-sub">' + escapeHtml(currentRecurso()) + '</div>' +
         '</div>' +
         '<div class="rb-cell rb-saldo ' + saldoCls + '">' + saldoTxt + '</div>' +
         '<div class="rb-cell rb-valor-wrap">' +
-          '<button type="button" class="rb-autofill" data-i="' + i + '" title="Llenar con el saldo disponible">⚡</button>' +
+          '<button type="button" class="rb-autofill" data-i="' + i + '" title="Llenar con el saldo disponible menos las deducciones ya ingresadas">⚡</button>' +
           '<input type="text" class="rb-valor" placeholder="Valor a pagar" value="' + escapeHtml(row.valor) + '">' +
         '</div>' +
         '<button type="button" class="rm" data-act="rm-rubro">✕</button>' +
@@ -2618,7 +2622,7 @@ button { font-weight:600; }
     }).join("");
 
     wrap.innerHTML = thead + rows;
-    wireLineItemInputs(wrap, opForm.rubros, ["rubro", "valor"], ["rb-rubro", "rb-valor"], "rm-rubro", ".rb-row");
+    wireLineItemInputs(wrap, opForm.rubros, ["valor"], ["rb-valor"], "rm-rubro", ".rb-row");
     updateOpSummary();
 
     wrap.querySelectorAll(".rb-autofill").forEach(function (btn) {
@@ -2626,7 +2630,10 @@ button { font-weight:600; }
         var i = parseInt(btn.dataset.i, 10);
         var s = currentSaldoRp();
         if (s === null) return;
-        opForm.rubros[i].valor = s > 0 ? s : 0;
+        var deducciones = opForm.nomina.reduce(function (sum, d) { return sum + (Number(d.valor) || 0); }, 0) +
+          opForm.descuentos.reduce(function (sum, d) { return sum + (Number(d.valor) || 0); }, 0);
+        var valorAGirar = s - deducciones;
+        opForm.rubros[i].valor = valorAGirar > 0 ? valorAGirar : 0;
         renderRubroRows();
         updateOpSummary();
       });
@@ -2758,6 +2765,11 @@ button { font-weight:600; }
   }
   document.getElementById("op-crp").addEventListener("input", function () { updateOpInfoBox(); renderCrpSuggestions(); });
   document.getElementById("op-crp").addEventListener("focus", renderCrpSuggestions);
+  document.getElementById("op-concepto").addEventListener("input", function (e) {
+    var pos = e.target.selectionStart;
+    e.target.value = e.target.value.toUpperCase();
+    e.target.setSelectionRange(pos, pos);
+  });
   document.getElementById("op-crp").addEventListener("blur", function () {
     setTimeout(function () { document.getElementById("crpSuggest").classList.remove("open"); }, 120);
   });
@@ -2770,7 +2782,7 @@ button { font-weight:600; }
     document.getElementById("op-anulado").checked = false;
     if (!keepCrp) document.getElementById("op-crp").value = "";
     opForm.rubros = [{ rubro: "", recurso: "", valor: "" }];
-    opForm.descuentos = [];
+    opForm.descuentos = [{ concepto: "", cuenta: "", tercero: "", valor: "" }];
     opForm.nomina = [];
     renderRubroRows(); renderDescuentoRows(); renderNominaRows(); updateOpSummary(); updateOpInfoBox();
   }
